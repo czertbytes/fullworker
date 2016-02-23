@@ -1,5 +1,10 @@
 package worker
 
+import (
+	"fmt"
+	"sync"
+)
+
 type Dispatcher struct {
 	workerPool chan chan Job
 	maxWorkers int
@@ -7,15 +12,31 @@ type Dispatcher struct {
 	workers    []Worker
 }
 
-func NewDispatcher(jobQueue chan Job, maxWorkers int) *Dispatcher {
+func NewDispatcher(maxWorkers int) *Dispatcher {
 	workerPool := make(chan chan Job, maxWorkers)
 
 	return &Dispatcher{
-		jobQueue:   jobQueue,
+		jobQueue:   make(chan Job, 10),
 		maxWorkers: maxWorkers,
 		workerPool: workerPool,
 		workers:    []Worker{},
 	}
+}
+
+func (d *Dispatcher) AddJob(wg *sync.WaitGroup, url string) {
+	newJob := Job{
+		URL:        url,
+		ResultChan: make(chan JobResult),
+	}
+
+	d.jobQueue <- newJob
+
+	go func(job Job) {
+		defer wg.Done()
+		result := <-job.ResultChan
+
+		fmt.Printf("%s downloaded %d bytes in %s\n", job.URL, result.Length, result.Time)
+	}(newJob)
 }
 
 func (d *Dispatcher) Run() {

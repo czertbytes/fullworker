@@ -1,19 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"sync"
 
+	"github.com/czertbytes/fullworker/pipeline"
 	"github.com/czertbytes/fullworker/worker"
 )
 
-func main() {
-	workerQueue()
-}
-
-func workerQueue() {
-
-	urls := []string{
+var (
+	urls = []string{
 		"https://www.google.com",
 		"https://www.apple.com",
 		"https://www.golang.org",
@@ -23,30 +18,40 @@ func workerQueue() {
 		"https://www.netflix.com",
 		"https://www.spotify.com",
 		"https://www.dropbox.com",
+		"https://www.teslamotors.com",
 	}
+)
 
-	jobQueue := make(chan worker.Job, 10)
+func main() {
+	//jobPipeline()
+	workerQueue()
+}
 
-	dispatcher := worker.NewDispatcher(jobQueue, 5)
+func jobPipeline() {
+	jobPipeline := pipeline.NewPipeline()
+
+	downloader := pipeline.NewDownloader(urls)
+	sizer := pipeline.NewSizer()
+	printer := pipeline.NewPrinter()
+
+	// connect pipelines
+	sizer.In = downloader.Out
+	printer.In = sizer.Out
+
+	jobPipeline.AddProcesses(downloader, sizer, printer)
+	jobPipeline.Run()
+}
+
+func workerQueue() {
+	dispatcher := worker.NewDispatcher(5)
 	dispatcher.Run()
 
 	var wg sync.WaitGroup
+	wg.Add(len(urls))
+
+	// add job
 	for _, url := range urls {
-		wg.Add(1)
-		newJob := worker.Job{
-			URL:        url,
-			ResultChan: make(chan worker.JobResult),
-		}
-
-		jobQueue <- newJob
-
-		go func(job worker.Job) {
-			defer wg.Done()
-
-			result := <-job.ResultChan
-
-			fmt.Printf("%s downloaded %d bytes in %s\n", job.URL, result.Length, result.Time)
-		}(newJob)
+		dispatcher.StartJob(&wg, url)
 	}
 
 	wg.Wait()
